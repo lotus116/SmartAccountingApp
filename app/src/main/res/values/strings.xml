@@ -16,11 +16,11 @@
     </string-array>
 
     <string-array name="time_presets">
-        <item>当前月份</item>
-        <item>过去 30 天</item>
+        <item>当月</item>
+        <item>最近 7 天</item>
+        <item>最近 30 天</item>
         <item>本年</item>
-        <item>所有时间</item>
-    </string-array>
+        <item>自定义</item>  </string-array>
 
     <string-array name="account_types_with_all">
         <item>全部</item>

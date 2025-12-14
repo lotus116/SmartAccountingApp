@@ -35,10 +35,8 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 public class ChartActivity extends AppCompatActivity {
@@ -51,7 +49,7 @@ public class ChartActivity extends AppCompatActivity {
     private Spinner timePresetSpinner;
     private ImageView ivSelectDate;
 
-    private String currentUserId; // 【新增】当前登录用户的ID
+    private String currentUserId; // 当前登录用户的ID
 
     private String startDate;
     private String endDate;
@@ -63,7 +61,7 @@ public class ChartActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_chart);
 
-        // 【核心修改 1】获取当前登录用户ID
+        // 获取当前登录用户ID
         currentUserId = getIntent().getStringExtra("user_id"); // 优先从 Intent 获取
         if (currentUserId == null || currentUserId.isEmpty()) {
             currentUserId = PrefsManager.getCurrentUserId(this); // 容错获取
@@ -84,22 +82,27 @@ public class ChartActivity extends AppCompatActivity {
         timePresetSpinner = findViewById(R.id.spinner_time_preset);
         ivSelectDate = findViewById(R.id.iv_select_date);
 
-        // 初始化日期范围（默认为当月）
+        // 默认初始化日期范围为当月
         initDateRangeToCurrentMonth();
 
         // 初始化 Spinner
         initTimePresetSpinner();
 
-        // 初始化图表数据
+        // 首次加载图表数据
         loadAllCharts();
 
         ivSelectDate.setOnClickListener(v -> showDatePickerDialog());
     }
 
-    // 统一加载所有图表数据的方法
+    /**
+     * 统一加载所有图表数据的方法
+     */
     private void loadAllCharts() {
         if (startDate == null || endDate == null) return;
+
+        // 【核心修正 1：统一更新日期范围 TextView】
         tvDateRange.setText(String.format(Locale.getDefault(), "%s 至 %s", startDate, endDate));
+
         loadSummaryData();
         loadPieChartData();
         loadLineChartData();
@@ -115,64 +118,97 @@ public class ChartActivity extends AppCompatActivity {
         timePresetSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                // 【核心修正 2：确保每个选项对应正确的日期逻辑】
                 switch (position) {
-                    case 0: // 当月
+                    case 0: // 假设 [0] 是 “当月”
                         initDateRangeToCurrentMonth();
                         break;
-                    case 1: // 最近 7 天
+                    case 1: // 假设 [1] 是 “最近 7 天”
                         setFilterToLastNDays(7);
                         break;
-                    case 2: // 最近 30 天
+                    case 2: // 假设 [2] 是 “最近 30 天”
                         setFilterToLastNDays(30);
                         break;
-                    case 3:
-                        // 自定义日期，不触发数据加载
+                    case 3: // 假设 [3] 是 “本年”
+                        initDateRangeToCurrentYear();
+                        break;
+                    case 4: // 假设 [4] 是 “自定义”
+                        // 不触发数据加载，等待用户点击日历图标
                         return;
+                    default:
+                        initDateRangeToCurrentMonth();
+                        break;
                 }
                 loadAllCharts();
             }
 
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
-                // 默认当月
                 initDateRangeToCurrentMonth();
                 loadAllCharts();
             }
         });
     }
 
+    /**
+     * 初始化日期范围为当月 (1号到当前日期)
+     */
     private void initDateRangeToCurrentMonth() {
         Calendar calendar = Calendar.getInstance();
+
+        // 结束日期：当前日期
+        endDate = dateFormat.format(calendar.getTime());
+
+        // 开始日期：当月第一天
         calendar.set(Calendar.DAY_OF_MONTH, 1);
         startDate = dateFormat.format(calendar.getTime());
-
-        calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH));
-        endDate = dateFormat.format(calendar.getTime());
     }
 
-    private void setFilterToLastNDays(int days) {
+    /**
+     * 【新增】初始化日期范围为本年 (1月1号到当前日期)
+     */
+    private void initDateRangeToCurrentYear() {
         Calendar calendar = Calendar.getInstance();
+
+        // 结束日期：当前日期
         endDate = dateFormat.format(calendar.getTime());
 
-        calendar.add(Calendar.DAY_OF_YEAR, -(days - 1)); // 包含今天，所以减去 days-1
+        // 开始日期：当年第一天
+        calendar.set(Calendar.MONTH, Calendar.JANUARY);
+        calendar.set(Calendar.DAY_OF_MONTH, 1);
         startDate = dateFormat.format(calendar.getTime());
     }
 
+
+    /**
+     * 设置 N 天前的日期范围 (从 N 天前到今天)
+     */
+    private void setFilterToLastNDays(int days) {
+        Calendar calendar = Calendar.getInstance();
+        // 结束日期：今天
+        endDate = dateFormat.format(calendar.getTime());
+
+        // 开始日期：包含今天，所以减去 days - 1
+        calendar.add(Calendar.DAY_OF_YEAR, -(days - 1));
+        startDate = dateFormat.format(calendar.getTime());
+    }
+
+
+    /**
+     * 显示自定义日期选择对话框
+     */
     private void showDatePickerDialog() {
         Calendar calendar = Calendar.getInstance();
-        try {
-            calendar.setTime(dateFormat.parse(endDate));
-        } catch (ParseException e) {
-            // 忽略
-        }
 
+        // 第一次弹窗：选择结束日期
         new DatePickerDialog(this, (view, year, month, dayOfMonth) -> {
             Calendar selectedEndDate = Calendar.getInstance();
             selectedEndDate.set(year, month, dayOfMonth);
             endDate = dateFormat.format(selectedEndDate.getTime());
 
-            // 再次弹窗选择开始日期
+            // 第二次弹窗：选择开始日期
             Calendar startCalendar = Calendar.getInstance();
+            // 尝试从当前的 startDate 初始化选择器
             try {
                 startCalendar.setTime(dateFormat.parse(startDate));
             } catch (ParseException e) {
@@ -186,10 +222,14 @@ public class ChartActivity extends AppCompatActivity {
 
                 if (selectedStartDate.after(selectedEndDate)) {
                     Toast.makeText(ChartActivity.this, "开始日期不能晚于结束日期", Toast.LENGTH_SHORT).show();
-                    initDateRangeToCurrentMonth(); // 恢复默认
+                    // 如果日期不合法，不进行操作或恢复默认
+                    startDate = null;
+                    endDate = null;
+                    initDateRangeToCurrentMonth();
                 }
-                // 手动选择日期后，将 Spinner 设置为 “当月” 以外的值，防止循环触发
-                timePresetSpinner.setSelection(3); // 假设自定义在最后一个位置
+
+                // 手动选择日期后，将 Spinner 设置为 “自定义” 索引 (假设 time_presets 数组有 5 项，自定义在索引 4)
+                timePresetSpinner.setSelection(timePresetSpinner.getCount() - 1);
                 loadAllCharts();
 
             }, startCalendar.get(Calendar.YEAR), startCalendar.get(Calendar.MONTH), startCalendar.get(Calendar.DAY_OF_MONTH)).show();
@@ -204,7 +244,6 @@ public class ChartActivity extends AppCompatActivity {
         double totalIncome = 0;
         double totalExpense = 0;
 
-        // 【核心修改 2】传入 currentUserId
         Cursor cursor = dbHelper.getAccountSummary(currentUserId, startDate, endDate);
         if (cursor.moveToFirst()) {
             totalIncome = cursor.getDouble(cursor.getColumnIndexOrThrow("total_income"));
@@ -234,7 +273,6 @@ public class ChartActivity extends AppCompatActivity {
 
         // 1. 从数据库获取数据
         List<PieEntry> entries = new ArrayList<>();
-        // 【核心修改 3】传入 currentUserId
         Cursor cursor = dbHelper.getPieChartData(currentUserId, startDate, endDate);
 
         if (cursor.moveToFirst()) {
@@ -295,7 +333,6 @@ public class ChartActivity extends AppCompatActivity {
         lineChart.getAxisRight().setEnabled(false); // 禁用右侧 Y 轴
 
         // 1. 从数据库获取数据
-        // 【核心修改 4】传入 currentUserId
         Cursor cursor = dbHelper.getTrendDataByRange(currentUserId, startDate, endDate);
 
         List<Entry> incomeEntries = new ArrayList<>();
