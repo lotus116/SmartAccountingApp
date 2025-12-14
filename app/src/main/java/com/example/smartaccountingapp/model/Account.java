@@ -1,13 +1,10 @@
 package com.example.smartaccountingapp.model;
 
-import java.io.Serializable; // 【新增】导入 Serializable
+import java.io.Serializable;
 
-// 【修改】让 Account 类实现 Serializable 接口
 public class Account implements Serializable {
-    // Java 建议为 Serializable 类添加 serialVersionUID
-    private static final long serialVersionUID = 1L;
-
     private int id;
+    private String userId; // 【新增】用户ID，用于区分不同用户的记录
     private String type; // 收入/支出
     private String category;
     private double amount;
@@ -18,8 +15,10 @@ public class Account implements Serializable {
         // 无参构造函数 (Gson 反序列化需要)
     }
 
-    public Account(int id, String type, String category, double amount, String date, String note) {
+    // 【修改】构造函数新增 userId 参数
+    public Account(int id, String userId, String type, String category, double amount, String date, String note) {
         this.id = id;
+        this.userId = userId;
         this.type = type;
         this.category = category;
         this.amount = amount;
@@ -31,6 +30,10 @@ public class Account implements Serializable {
 
     public int getId() { return id; }
     public void setId(int id) { this.id = id; }
+
+    // 【新增】
+    public String getUserId() { return userId; }
+    public void setUserId(String userId) { this.userId = userId; }
 
     public String getType() { return type; }
     public void setType(String type) { this.type = type; }

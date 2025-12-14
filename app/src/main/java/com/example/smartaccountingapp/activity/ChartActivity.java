@@ -15,6 +15,7 @@ import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 import com.example.smartaccountingapp.R;
 import com.example.smartaccountingapp.util.DBHelper;
+import com.example.smartaccountingapp.util.PrefsManager;
 import com.github.mikephil.charting.charts.LineChart;
 import com.github.mikephil.charting.charts.PieChart;
 import com.github.mikephil.charting.components.Legend;
@@ -27,269 +28,310 @@ import com.github.mikephil.charting.data.PieDataSet;
 import com.github.mikephil.charting.data.PieEntry;
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter;
 import com.github.mikephil.charting.formatter.PercentFormatter;
+import com.github.mikephil.charting.utils.ColorTemplate;
+
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
-import java.util.Locale;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 public class ChartActivity extends AppCompatActivity {
+    private DBHelper dbHelper;
     private PieChart pieChart;
     private LineChart lineChart;
-    private DBHelper dbHelper;
-    private TextView tvDateRange, tvTotalExpense, tvTotalIncome;
-    private Spinner spinnerTimePreset;
+    private TextView tvDateRange;
+    private TextView tvTotalExpense;
+    private TextView tvTotalIncome;
+    private Spinner timePresetSpinner;
+    private ImageView ivSelectDate;
 
-    private Calendar calendarStart, calendarEnd;
-    private SimpleDateFormat sdfDb = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
-    private SimpleDateFormat sdfUi = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+    private String currentUserId; // 【新增】当前登录用户的ID
 
-    private final int[] EXPENSE_COLORS = {
-            Color.rgb(255, 99, 132), Color.rgb(54, 162, 235), Color.rgb(255, 206, 86),
-            Color.rgb(75, 192, 192), Color.rgb(153, 102, 255), Color.rgb(201, 203, 207)
-    };
+    private String startDate;
+    private String endDate;
+    private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_chart);
 
+        // 【核心修改 1】获取当前登录用户ID
+        currentUserId = getIntent().getStringExtra("user_id"); // 优先从 Intent 获取
+        if (currentUserId == null || currentUserId.isEmpty()) {
+            currentUserId = PrefsManager.getCurrentUserId(this); // 容错获取
+        }
+        if (currentUserId == null || currentUserId.isEmpty()) {
+            Toast.makeText(this, "用户ID丢失，无法加载图表数据", Toast.LENGTH_LONG).show();
+            finish();
+            return;
+        }
+
+        // 初始化
         dbHelper = new DBHelper(this);
         pieChart = findViewById(R.id.pie_chart);
         lineChart = findViewById(R.id.line_chart);
         tvDateRange = findViewById(R.id.tv_date_range);
         tvTotalExpense = findViewById(R.id.tv_total_expense);
         tvTotalIncome = findViewById(R.id.tv_total_income);
-        spinnerTimePreset = findViewById(R.id.spinner_time_preset);
-        ImageView ivSelectDate = findViewById(R.id.iv_select_date);
+        timePresetSpinner = findViewById(R.id.spinner_time_preset);
+        ivSelectDate = findViewById(R.id.iv_select_date);
 
-        calendarStart = Calendar.getInstance();
-        calendarEnd = Calendar.getInstance();
+        // 初始化日期范围（默认为当月）
+        initDateRangeToCurrentMonth();
 
-        // 初始化为当前月份
-        setRangeToCurrentMonth();
+        // 初始化 Spinner
+        initTimePresetSpinner();
 
-        // Spinner 监听器
-        spinnerTimePreset.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+        // 初始化图表数据
+        loadAllCharts();
+
+        ivSelectDate.setOnClickListener(v -> showDatePickerDialog());
+    }
+
+    // 统一加载所有图表数据的方法
+    private void loadAllCharts() {
+        if (startDate == null || endDate == null) return;
+        tvDateRange.setText(String.format(Locale.getDefault(), "%s 至 %s", startDate, endDate));
+        loadSummaryData();
+        loadPieChartData();
+        loadLineChartData();
+    }
+
+
+    private void initTimePresetSpinner() {
+        ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(this,
+                R.array.time_presets, android.R.layout.simple_spinner_item);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        timePresetSpinner.setAdapter(adapter);
+
+        timePresetSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 switch (position) {
-                    case 0: // 当前月份
-                        setRangeToCurrentMonth();
+                    case 0: // 当月
+                        initDateRangeToCurrentMonth();
                         break;
-                    case 1: // 过去 30 天
-                        setRangeToLast30Days();
+                    case 1: // 最近 7 天
+                        setFilterToLastNDays(7);
                         break;
-                    case 2: // 本年
-                        setRangeToCurrentYear();
+                    case 2: // 最近 30 天
+                        setFilterToLastNDays(30);
                         break;
-                    case 3: // 所有时间
-                        setRangeToAllTime();
-                        break;
+                    case 3:
+                        // 自定义日期，不触发数据加载
+                        return;
                 }
                 loadAllCharts();
             }
 
             @Override
-            public void onNothingSelected(AdapterView<?> parent) {}
-        });
-
-        // 日历选择监听器
-        ivSelectDate.setOnClickListener(v -> showDateRangePickerDialog());
-
-        // 第一次由 Spinner 监听器触发
-    }
-
-    // 设置日期范围到当前月份
-    private void setRangeToCurrentMonth() {
-        calendarStart.setTime(new Date());
-        calendarStart.set(Calendar.DAY_OF_MONTH, 1); // 月初
-
-        calendarEnd.setTime(new Date());
-        calendarEnd.set(Calendar.DAY_OF_MONTH, calendarEnd.getActualMaximum(Calendar.DAY_OF_MONTH)); // 月末
-    }
-
-    // 设置日期范围到过去 30 天
-    private void setRangeToLast30Days() {
-        calendarEnd.setTime(new Date());
-        calendarStart.setTime(new Date());
-        calendarStart.add(Calendar.DAY_OF_MONTH, -29);
-    }
-
-    // 设置日期范围到本年
-    private void setRangeToCurrentYear() {
-        calendarStart.setTime(new Date());
-        calendarStart.set(Calendar.DAY_OF_YEAR, 1); // 年初
-
-        calendarEnd.setTime(new Date());
-        calendarEnd.set(Calendar.MONTH, 11);
-        calendarEnd.set(Calendar.DAY_OF_MONTH, calendarEnd.getActualMaximum(Calendar.DAY_OF_MONTH)); // 年末
-    }
-
-    // 设置日期范围到所有时间
-    private void setRangeToAllTime() {
-        // 由于 SQLite 的日期比较，这里用一个极早的日期
-        calendarStart.set(2000, 0, 1);
-        calendarEnd.setTime(new Date());
-    }
-
-    // 显示日期范围选择对话框
-    private void showDateRangePickerDialog() {
-        new DatePickerDialog(this, (view, year, month, dayOfMonth) -> {
-            calendarStart.set(year, month, dayOfMonth);
-            showEndDateDialog();
-        }, calendarStart.get(Calendar.YEAR), calendarStart.get(Calendar.MONTH), calendarStart.get(Calendar.DAY_OF_MONTH)).show();
-    }
-
-    private void showEndDateDialog() {
-        new DatePickerDialog(this, (view, year, month, dayOfMonth) -> {
-            calendarEnd.set(year, month, dayOfMonth);
-
-            // 确保结束日期不早于开始日期
-            if (calendarEnd.getTimeInMillis() < calendarStart.getTimeInMillis()) {
-                Toast.makeText(ChartActivity.this, "结束日期不能早于开始日期", Toast.LENGTH_SHORT).show();
-                calendarEnd.setTime(calendarStart.getTime()); // 重设为开始日期
+            public void onNothingSelected(AdapterView<?> parent) {
+                // 默认当月
+                initDateRangeToCurrentMonth();
+                loadAllCharts();
             }
-            // 这里将 Spinner 选中位置设置为 3 (所有时间)，表示用户选择了自定义范围
-            // 如果您在 strings.xml 中添加了“自定义”，则应选中自定义
-            spinnerTimePreset.setSelection(3);
-            loadAllCharts();
-        }, calendarEnd.get(Calendar.YEAR), calendarEnd.get(Calendar.MONTH), calendarEnd.get(Calendar.DAY_OF_MONTH)).show();
+        });
     }
 
-    // -------------------
-    // 图表加载主控
-    // -------------------
-    private void loadAllCharts() {
-        String startDate = sdfDb.format(calendarStart.getTime());
-        String endDate = sdfDb.format(calendarEnd.getTime());
+    private void initDateRangeToCurrentMonth() {
+        Calendar calendar = Calendar.getInstance();
+        calendar.set(Calendar.DAY_OF_MONTH, 1);
+        startDate = dateFormat.format(calendar.getTime());
 
-        String uiRange = sdfUi.format(calendarStart.getTime()) + " 至 " + sdfUi.format(calendarEnd.getTime());
-        tvDateRange.setText(uiRange);
-
-        // 1. 加载概览数据 (此方法内部通过 loadTotalExpense 间接加载了饼图)
-        loadOverviewData(startDate, endDate);
-
-        // 2. 加载折线图
-        loadLineChartData(startDate, endDate);
+        calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH));
+        endDate = dateFormat.format(calendar.getTime());
     }
 
-    // -------------------
-    // 概览数据加载
-    // -------------------
-    private void loadOverviewData(String startDate, String endDate) {
-        // 总收入
-        double totalIncome = dbHelper.getTotalIncomeByRange(startDate, endDate);
-        tvTotalIncome.setText(String.format(Locale.getDefault(), "总收入: +%.2f", totalIncome));
+    private void setFilterToLastNDays(int days) {
+        Calendar calendar = Calendar.getInstance();
+        endDate = dateFormat.format(calendar.getTime());
 
-        // 总支出 (从饼图逻辑中获取)
-        double totalExpense = loadTotalExpense(startDate, endDate);
-        tvTotalExpense.setText(String.format(Locale.getDefault(), "总支出: -%.2f", totalExpense));
+        calendar.add(Calendar.DAY_OF_YEAR, -(days - 1)); // 包含今天，所以减去 days-1
+        startDate = dateFormat.format(calendar.getTime());
     }
 
-    // -------------------
-    // 饼图数据加载
-    // -------------------
-    private double loadTotalExpense(String startDate, String endDate) {
-        Cursor cursor = dbHelper.getExpenseSummaryByRange(startDate, endDate);
+    private void showDatePickerDialog() {
+        Calendar calendar = Calendar.getInstance();
+        try {
+            calendar.setTime(dateFormat.parse(endDate));
+        } catch (ParseException e) {
+            // 忽略
+        }
 
-        ArrayList<PieEntry> entries = new ArrayList<>();
-        float totalExpense = 0;
+        new DatePickerDialog(this, (view, year, month, dayOfMonth) -> {
+            Calendar selectedEndDate = Calendar.getInstance();
+            selectedEndDate.set(year, month, dayOfMonth);
+            endDate = dateFormat.format(selectedEndDate.getTime());
+
+            // 再次弹窗选择开始日期
+            Calendar startCalendar = Calendar.getInstance();
+            try {
+                startCalendar.setTime(dateFormat.parse(startDate));
+            } catch (ParseException e) {
+                // 忽略
+            }
+
+            new DatePickerDialog(this, (view2, startYear, startMonth, startDay) -> {
+                Calendar selectedStartDate = Calendar.getInstance();
+                selectedStartDate.set(startYear, startMonth, startDay);
+                startDate = dateFormat.format(selectedStartDate.getTime());
+
+                if (selectedStartDate.after(selectedEndDate)) {
+                    Toast.makeText(ChartActivity.this, "开始日期不能晚于结束日期", Toast.LENGTH_SHORT).show();
+                    initDateRangeToCurrentMonth(); // 恢复默认
+                }
+                // 手动选择日期后，将 Spinner 设置为 “当月” 以外的值，防止循环触发
+                timePresetSpinner.setSelection(3); // 假设自定义在最后一个位置
+                loadAllCharts();
+
+            }, startCalendar.get(Calendar.YEAR), startCalendar.get(Calendar.MONTH), startCalendar.get(Calendar.DAY_OF_MONTH)).show();
+
+        }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show();
+    }
+
+    // 【修改】 loadSummaryData 方法，计算当前用户收支总和
+    private void loadSummaryData() {
+        if (startDate == null || endDate == null) return;
+
+        double totalIncome = 0;
+        double totalExpense = 0;
+
+        // 【核心修改 2】传入 currentUserId
+        Cursor cursor = dbHelper.getAccountSummary(currentUserId, startDate, endDate);
+        if (cursor.moveToFirst()) {
+            totalIncome = cursor.getDouble(cursor.getColumnIndexOrThrow("total_income"));
+            totalExpense = cursor.getDouble(cursor.getColumnIndexOrThrow("total_expense"));
+        }
+        cursor.close();
+
+        tvTotalIncome.setText(String.format(Locale.getDefault(), "总收入: %.2f", totalIncome));
+        tvTotalExpense.setText(String.format(Locale.getDefault(), "总支出: %.2f", totalExpense));
+    }
+
+
+    // 【修改】 loadPieChartData 方法，用于加载当前用户的支出饼图数据
+    private void loadPieChartData() {
+        // 配置 PieChart 基础样式
+        pieChart.setUsePercentValues(true);
+        pieChart.getDescription().setEnabled(false);
+        pieChart.setExtraOffsets(5, 10, 5, 5);
+        pieChart.setDragDecelerationFrictionCoef(0.95f);
+        pieChart.setDrawHoleEnabled(true);
+        pieChart.setHoleColor(Color.WHITE);
+        pieChart.setTransparentCircleColor(Color.WHITE);
+        pieChart.setTransparentCircleAlpha(110);
+        pieChart.setHoleRadius(58f);
+        pieChart.setTransparentCircleRadius(61f);
+        pieChart.setDrawEntryLabels(false);
+
+        // 1. 从数据库获取数据
+        List<PieEntry> entries = new ArrayList<>();
+        // 【核心修改 3】传入 currentUserId
+        Cursor cursor = dbHelper.getPieChartData(currentUserId, startDate, endDate);
 
         if (cursor.moveToFirst()) {
             do {
                 String category = cursor.getString(cursor.getColumnIndexOrThrow(DBHelper.COLUMN_CATEGORY));
-                float amount = cursor.getFloat(cursor.getColumnIndexOrThrow("total_amount"));
+                float amount = (float) cursor.getDouble(cursor.getColumnIndexOrThrow("total_amount"));
                 entries.add(new PieEntry(amount, category));
-                totalExpense += amount;
             } while (cursor.moveToNext());
         }
         cursor.close();
 
-        // 设置饼图数据
-        setupPieChart(totalExpense, entries);
-        return totalExpense;
-    }
-
-    private void setupPieChart(float totalExpense, ArrayList<PieEntry> entries) {
-        pieChart.setUsePercentValues(true);
-        pieChart.getDescription().setEnabled(false);
-        pieChart.setExtraOffsets(5, 10, 5, 5);
-        pieChart.setDrawHoleEnabled(true);
-        pieChart.setHoleColor(Color.WHITE);
-        pieChart.setTransparentCircleRadius(61f);
-        pieChart.setDrawEntryLabels(false);
-
-        Legend legend = pieChart.getLegend();
-        legend.setVerticalAlignment(Legend.LegendVerticalAlignment.BOTTOM);
-        // 【已修正】将 Legend.HorizontalAlignment 修正为 Legend.LegendHorizontalAlignment
-        legend.setHorizontalAlignment(Legend.LegendHorizontalAlignment.CENTER);
-        legend.setOrientation(Legend.LegendOrientation.HORIZONTAL);
-        legend.setDrawInside(false);
-        legend.setWordWrapEnabled(true);
-
         if (entries.isEmpty()) {
             pieChart.clear();
-            pieChart.setNoDataText("所选时间段暂无支出数据");
-            pieChart.setCenterText("总支出\n0.00");
+            pieChart.setNoDataText("所选时间段暂无支出记录");
+            pieChart.invalidate();
             return;
         }
 
-        PieDataSet dataSet = new PieDataSet(entries, "");
-        dataSet.setColors(EXPENSE_COLORS);
+        // 2. 设置数据集
+        PieDataSet dataSet = new PieDataSet(entries, "支出类别");
         dataSet.setSliceSpace(3f);
         dataSet.setSelectionShift(5f);
 
+        // 设置颜色
+        ArrayList<Integer> colors = new ArrayList<>();
+        for (int c : ColorTemplate.VORDIPLOM_COLORS)
+            colors.add(c);
+        for (int c : ColorTemplate.JOYFUL_COLORS)
+            colors.add(c);
+
+        dataSet.setColors(colors);
+
+        // 3. 创建 PieData
         PieData data = new PieData(dataSet);
         data.setValueFormatter(new PercentFormatter(pieChart));
-        data.setValueTextSize(15f);
+        data.setValueTextSize(11f);
         data.setValueTextColor(Color.BLACK);
-
         pieChart.setData(data);
         pieChart.invalidate();
 
-        // 中间文本显示总支出
-        pieChart.setCenterText("总支出\n" + String.format(Locale.getDefault(), "%.2f", totalExpense));
+        // 4. 配置 Legend
+        Legend l = pieChart.getLegend();
+        l.setVerticalAlignment(Legend.LegendVerticalAlignment.BOTTOM);
+        l.setHorizontalAlignment(Legend.LegendHorizontalAlignment.LEFT);
+        l.setOrientation(Legend.LegendOrientation.HORIZONTAL);
+        l.setDrawInside(false);
+        l.setXEntrySpace(7f);
+        l.setYEntrySpace(0f);
+        l.setYOffset(5f);
     }
 
-    // -------------------
-    // 折线图数据加载
-    // -------------------
-    private void loadLineChartData(String startDate, String endDate) {
-        Cursor cursor = dbHelper.getTrendDataByRange(startDate, endDate);
+    // 【修改】 loadLineChartData 方法，用于加载当前用户的收支趋势折线图数据
+    private void loadLineChartData() {
+        // 配置 LineChart 基础样式
+        lineChart.getDescription().setEnabled(false);
+        lineChart.setTouchEnabled(true);
+        lineChart.setDrawGridBackground(false);
+        lineChart.getAxisRight().setEnabled(false); // 禁用右侧 Y 轴
 
-        ArrayList<Entry> incomeEntries = new ArrayList<>();
-        ArrayList<Entry> expenseEntries = new ArrayList<>();
-        List<String> xValues = new ArrayList<>();
+        // 1. 从数据库获取数据
+        // 【核心修改 4】传入 currentUserId
+        Cursor cursor = dbHelper.getTrendDataByRange(currentUserId, startDate, endDate);
 
-        int i = 0;
+        List<Entry> incomeEntries = new ArrayList<>();
+        List<Entry> expenseEntries = new ArrayList<>();
+        List<String> xValues = new ArrayList<>(); // X 轴标签
+
         if (cursor.moveToFirst()) {
+            int i = 0;
             do {
                 String timeKey = cursor.getString(cursor.getColumnIndexOrThrow("time_key"));
-                float income = cursor.getFloat(cursor.getColumnIndexOrThrow("total_income"));
-                float expense = cursor.getFloat(cursor.getColumnIndexOrThrow("total_expense"));
+                float income = (float) cursor.getDouble(cursor.getColumnIndexOrThrow("total_income"));
+                float expense = (float) cursor.getDouble(cursor.getColumnIndexOrThrow("total_expense"));
 
                 incomeEntries.add(new Entry(i, income));
                 expenseEntries.add(new Entry(i, expense));
-                xValues.add(timeKey);
+                xValues.add(timeKey.substring(timeKey.lastIndexOf('-') + 1) + "日/月"); // 简化标签
                 i++;
             } while (cursor.moveToNext());
         }
         cursor.close();
 
         if (incomeEntries.isEmpty() && expenseEntries.isEmpty()) {
+            lineChart.clear();
             lineChart.setNoDataText("所选时间段暂无收支趋势数据");
+            lineChart.invalidate();
             return;
         }
 
-        // 1. 设置数据集
+        // 2. 设置数据集
         LineDataSet incomeSet = new LineDataSet(incomeEntries, "收入");
         incomeSet.setColor(Color.rgb(50, 205, 50)); // 亮绿色
         incomeSet.setCircleColor(Color.rgb(50, 205, 50));
         incomeSet.setLineWidth(2f);
         incomeSet.setCircleRadius(4f);
         incomeSet.setDrawValues(false);
+        incomeSet.setMode(LineDataSet.Mode.CUBIC_BEZIER); // 曲线平滑
 
         LineDataSet expenseSet = new LineDataSet(expenseEntries, "支出");
         expenseSet.setColor(Color.rgb(255, 69, 0)); // 橘红色
@@ -297,26 +339,21 @@ public class ChartActivity extends AppCompatActivity {
         expenseSet.setLineWidth(2f);
         expenseSet.setCircleRadius(4f);
         expenseSet.setDrawValues(false);
+        expenseSet.setMode(LineDataSet.Mode.CUBIC_BEZIER); // 曲线平滑
 
         LineData lineData = new LineData(incomeSet, expenseSet);
         lineChart.setData(lineData);
 
-        // 2. X 轴配置
+        // 3. X 轴配置
         XAxis xAxis = lineChart.getXAxis();
         xAxis.setValueFormatter(new IndexAxisValueFormatter(xValues));
         xAxis.setPosition(XAxis.XAxisPosition.BOTTOM);
         xAxis.setGranularity(1f);
-        xAxis.setLabelRotationAngle(30f); // 旋转标签，避免重叠
+        xAxis.setLabelRotationAngle(30f); // 旋转标签
+        xAxis.setDrawGridLines(false);
+        xAxis.setLabelCount(xValues.size(), false); // 确保所有标签显示
 
-        // 3. Y 轴配置
-        lineChart.getAxisLeft().setAxisMinimum(0f);
-        lineChart.getAxisRight().setEnabled(false);
-
-        // 4. 图例配置
-        Legend legend = lineChart.getLegend();
-        legend.setVerticalAlignment(Legend.LegendVerticalAlignment.TOP);
-
-        lineChart.getDescription().setEnabled(false);
-        lineChart.invalidate();
+        lineChart.animateX(1500); // 添加动画
+        lineChart.invalidate(); // 刷新图表
     }
 }

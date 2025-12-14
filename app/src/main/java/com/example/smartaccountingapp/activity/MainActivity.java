@@ -37,135 +37,107 @@ public class MainActivity extends AppCompatActivity {
     private AccountAdapter adapter;
     private DBHelper dbHelper;
 
+    private String currentUserId; // 当前登录用户的ID
+
     private static final int REQUEST_CODE_ADD = 1;
     private static final int REQUEST_CODE_EDIT = 2;
 
     // 筛选相关成员变量
     private String currentTypeFilter = null;
     private String currentCategoryFilter = null;
-    private String startDateFilter = null;
-    private String endDateFilter = null;
-    private Calendar calendarStart, calendarEnd;
-    private SimpleDateFormat sdfDb = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
-
-    // 【回退】排序相关成员变量
-    private Spinner spinnerSortMode;
-    private String currentOrderBy = DBHelper.COLUMN_DATE + " DESC, " + DBHelper.COLUMN_ID + " DESC";
+    private String currentStartDate = null;
+    private String currentEndDate = null;
+    private String currentOrderBy = DBHelper.COLUMN_DATE + " DESC, " + DBHelper.COLUMN_ID + " DESC"; // 默认排序
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        // 获取当前登录用户ID
+        currentUserId = PrefsManager.getCurrentUserId(this);
+        if (currentUserId == null || currentUserId.isEmpty()) {
+            Toast.makeText(this, "用户未登录，请先登录", Toast.LENGTH_LONG).show();
+            // 确保未登录时跳转到登录界面
+            Intent intent = new Intent(this, LoginActivity.class);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            startActivity(intent);
+            finish();
+            return;
+        }
+
+        // 初始化 DBHelper
         dbHelper = new DBHelper(this);
-        calendarStart = Calendar.getInstance();
-        calendarEnd = Calendar.getInstance();
 
-        // 默认设置为最近 30 天的筛选范围
-        setFilterToLast30Days();
-
-        // FloatingActionButton
         FloatingActionButton fabAdd = findViewById(R.id.fab_add);
         fabAdd.setOnClickListener(v -> {
             Intent intent = new Intent(MainActivity.this, AddAccountActivity.class);
             startActivityForResult(intent, REQUEST_CODE_ADD);
         });
 
-        // 【回退】初始化排序 Spinner (通过 findViewById)
-        spinnerSortMode = findViewById(R.id.spinner_sort_mode);
-        setupSortSpinner();
-
-        // RecycleView 初始化
+        // 初始化 RecyclerView 和 Adapter
         recyclerView = findViewById(R.id.recycler_view);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
-        loadAccounts(); // 首次加载数据
-    }
 
-    // 【回退】设置排序 Spinner 的方法 (逻辑不变)
-    private void setupSortSpinner() {
-        if (spinnerSortMode == null) return; // 安全检查
+        // 首次加载时，先获取数据
+        List<Account> initialAccounts = dbHelper.getFilteredAccounts(currentUserId, null, null, null, null, currentOrderBy);
+        adapter = new AccountAdapter(this, initialAccounts);
+        recyclerView.setAdapter(adapter);
 
-        ArrayAdapter<CharSequence> sortAdapter = ArrayAdapter.createFromResource(this,
-                R.array.sort_modes, android.R.layout.simple_spinner_dropdown_item);
-        sortAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinnerSortMode.setAdapter(sortAdapter);
-
-        spinnerSortMode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                // 根据用户选择的 position 设置 SQL 的 ORDER BY 子句
-                switch (position) {
-                    case 0: // 最新优先 (时间倒序)
-                        currentOrderBy = DBHelper.COLUMN_DATE + " DESC, " + DBHelper.COLUMN_ID + " DESC";
-                        break;
-                    case 1: // 最早优先 (时间正序)
-                        currentOrderBy = DBHelper.COLUMN_DATE + " ASC, " + DBHelper.COLUMN_ID + " ASC";
-                        break;
-                    case 2: // 金额最高优先
-                        currentOrderBy = DBHelper.COLUMN_AMOUNT + " DESC";
-                        break;
-                    case 3: // 金额最低优先
-                        currentOrderBy = DBHelper.COLUMN_AMOUNT + " ASC";
-                        break;
-                }
-                loadAccounts(); // 刷新列表
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {}
-        });
-    }
-
-    // ---------------------------------
-    // 数据加载与列表配置
-    // ---------------------------------
-
-    /**
-     * 根据当前的筛选和排序条件从数据库加载记账记录并刷新列表
-     */
-    private void loadAccounts() {
-        List<Account> accounts = dbHelper.getFilteredAccounts(
-                currentTypeFilter,
-                currentCategoryFilter,
-                startDateFilter,
-                endDateFilter,
-                currentOrderBy
-        );
-
-        if (adapter == null) {
-            adapter = new AccountAdapter(this, accounts);
-            recyclerView.setAdapter(adapter);
-        } else {
-            adapter.updateData(accounts);
-        }
-
+        // 设置 Adapter 的点击监听器
         adapter.setOnItemClickListener(new AccountAdapter.OnItemClickListener() {
             @Override
             public void onDeleteClick(int accountId) {
-                showDeleteDialog(accountId);
+                new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("删除确认")
+                        .setMessage("确定删除此条记录吗？")
+                        .setPositiveButton("确定", (dialog, which) -> {
+                            // 传入 currentUserId
+                            dbHelper.deleteAccount(accountId, currentUserId);
+                            loadAccounts();
+                            Toast.makeText(MainActivity.this, "记录已删除", Toast.LENGTH_SHORT).show();
+                        })
+                        .setNegativeButton("取消", null)
+                        .show();
             }
 
             @Override
             public void onItemClick(Account account) {
+                // 跳转到编辑页面
                 Intent intent = new Intent(MainActivity.this, AddAccountActivity.class);
-                intent.putExtra(AddAccountActivity.EXTRA_ACCOUNT, account);
+                intent.putExtra("is_edit", true);
+                intent.putExtra("account", account);
                 startActivityForResult(intent, REQUEST_CODE_EDIT);
             }
         });
+
+        // 初始化筛选器
+        initFilterSpinner();
+
+        // 首次启动时，默认筛选最近 30 天
+        if (currentStartDate == null) {
+            setFilterToLast30Days();
+        }
+
+        loadAccounts(); // 确保加载最新的数据
     }
 
-    // Activity 返回结果时刷新列表
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if ((requestCode == REQUEST_CODE_ADD || requestCode == REQUEST_CODE_EDIT) && resultCode == RESULT_OK) {
-            loadAccounts(); // 刷新列表
+        if (resultCode == RESULT_OK) {
+            if (requestCode == REQUEST_CODE_ADD || requestCode == REQUEST_CODE_EDIT) {
+                // 刷新数据
+                loadAccounts();
+            }
         }
     }
 
-    // ---------------------------------
-    // Menu 菜单配置 (保持 ActionView 修改前的简洁状态)
-    // ---------------------------------
+    private void loadAccounts() {
+        // 传入 currentUserId 进行筛选
+        List<Account> accounts = dbHelper.getFilteredAccounts(currentUserId, currentTypeFilter, currentCategoryFilter, currentStartDate, currentEndDate, currentOrderBy);
+        adapter.updateData(accounts);
+    }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
@@ -177,192 +149,61 @@ public class MainActivity extends AppCompatActivity {
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
         int id = item.getItemId();
 
-        if (id == R.id.action_chart) {
-            startActivity(new Intent(this, ChartActivity.class));
-            return true;
-        } else if (id == R.id.action_filter) { // 筛选菜单项处理
+        if (id == R.id.action_filter) {
             showFilterDialog();
             return true;
         } else if (id == R.id.action_export) {
-            exportData();
+            showExportDialog();
             return true;
         } else if (id == R.id.action_import) {
             showImportDialog();
             return true;
+        } else if (id == R.id.action_chart) {
+            // 跳转到 ChartActivity 时，传递当前用户ID
+            Intent intent = new Intent(this, ChartActivity.class);
+            intent.putExtra("user_id", currentUserId);
+            startActivity(intent);
+            return true;
         } else if (id == R.id.action_logout) {
-            showLogoutDialog();
+            // 执行退出登录
+            PrefsManager.logout(this);
+            // 跳转到登录界面
+            Intent intent = new Intent(this, LoginActivity.class);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            startActivity(intent);
+            finish();
             return true;
         }
-
         return super.onOptionsItemSelected(item);
     }
 
-    // ---------------------------------
-    // 筛选对话框和逻辑 (保持不变)
-    // ---------------------------------
+    // 导出确认对话框
+    private void showExportDialog() {
+        // 获取当前用户的所有记录
+        List<Account> accounts = dbHelper.getFilteredAccounts(currentUserId, null, null, null, null, null);
 
-    /**
-     * 将筛选日期范围设置为最近 30 天
-     */
-    private void setFilterToLast30Days() {
-        calendarEnd.setTime(new Date());
-        calendarStart.setTime(new Date());
-        calendarStart.add(Calendar.DAY_OF_MONTH, -29);
-
-        startDateFilter = sdfDb.format(calendarStart.getTime());
-        endDateFilter = sdfDb.format(calendarEnd.getTime());
-    }
-
-    /**
-     * 显示筛选对话框
-     */
-    private void showFilterDialog() {
-        final View dialogView = getLayoutInflater().inflate(R.layout.filter_dialog, null);
-
-        final Spinner spinnerType = dialogView.findViewById(R.id.filter_spinner_type);
-        final Spinner spinnerCategory = dialogView.findViewById(R.id.filter_spinner_category);
-        final EditText etStartDate = dialogView.findViewById(R.id.et_filter_start_date);
-        final EditText etEndDate = dialogView.findViewById(R.id.et_filter_end_date);
-
-
-        // 1. 类型筛选初始化
-        ArrayAdapter<CharSequence> typeAdapter = ArrayAdapter.createFromResource(this,
-                R.array.account_types_with_all, android.R.layout.simple_spinner_item);
-        typeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinnerType.setAdapter(typeAdapter);
-        if (currentTypeFilter == null) spinnerType.setSelection(0);
-        else spinnerType.setSelection(typeAdapter.getPosition(currentTypeFilter));
-
-        // 2. 类别筛选初始化
-        ArrayAdapter<CharSequence> categoryAdapter = ArrayAdapter.createFromResource(this,
-                R.array.expense_categories_with_all, android.R.layout.simple_spinner_item);
-        categoryAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinnerCategory.setAdapter(categoryAdapter);
-        if (currentCategoryFilter == null) spinnerCategory.setSelection(0);
-        else spinnerCategory.setSelection(categoryAdapter.getPosition(currentCategoryFilter));
-
-        // 3. 时间筛选预填充
-        etStartDate.setText(startDateFilter);
-        etEndDate.setText(endDateFilter);
-
-        // 设置日期选择监听
-        etStartDate.setOnClickListener(v -> showDatePickerDialog(etStartDate, true));
-        etEndDate.setOnClickListener(v -> showDatePickerDialog(etEndDate, false));
-
-
-        new AlertDialog.Builder(this)
-                .setTitle("筛选记账记录")
-                .setView(dialogView)
-                .setPositiveButton("应用筛选", (dialog, which) -> {
-                    // 1. 获取类型筛选值
-                    String selectedType = spinnerType.getSelectedItem().toString();
-                    currentTypeFilter = selectedType.equals("全部") ? null : selectedType;
-
-                    // 2. 获取类别筛选值
-                    String selectedCategory = spinnerCategory.getSelectedItem().toString();
-                    currentCategoryFilter = selectedCategory.equals("全部") ? null : selectedCategory;
-
-                    // 3. 获取时间筛选值
-                    startDateFilter = etStartDate.getText().toString().isEmpty() ? null : etStartDate.getText().toString();
-                    endDateFilter = etEndDate.getText().toString().isEmpty() ? null : etEndDate.getText().toString();
-
-                    // 4. 执行筛选并刷新列表
-                    loadAccounts();
-                })
-                .setNegativeButton("取消", null)
-                .setNeutralButton("清除筛选", (dialog, which) -> {
-                    currentTypeFilter = null;
-                    currentCategoryFilter = null;
-                    // 重置为默认时间段：最近30天
-                    setFilterToLast30Days();
-                    loadAccounts();
-                })
-                .show();
-    }
-
-    /**
-     * 显示日期选择对话框并更新筛选日期
-     */
-    private void showDatePickerDialog(EditText editText, boolean isStartDate) {
-        DatePickerDialog.OnDateSetListener dateSetListener = (view, year, monthOfYear, dayOfMonth) -> {
-            Calendar selectedCalendar = Calendar.getInstance();
-            selectedCalendar.set(Calendar.YEAR, year);
-            selectedCalendar.set(Calendar.MONTH, monthOfYear);
-            selectedCalendar.set(Calendar.DAY_OF_MONTH, dayOfMonth);
-
-            String selectedDate = sdfDb.format(selectedCalendar.getTime());
-            editText.setText(selectedDate);
-
-            if (isStartDate) {
-                startDateFilter = selectedDate;
-            } else {
-                endDateFilter = selectedDate;
-            }
-        };
-
-        Calendar initialCalendar = Calendar.getInstance();
-        String dateText = editText.getText().toString();
-        if (!dateText.isEmpty()) {
-            try {
-                Date date = sdfDb.parse(dateText);
-                if (date != null) {
-                    initialCalendar.setTime(date);
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+        if (accounts.isEmpty()) {
+            Toast.makeText(this, "当前用户没有记账记录可导出", Toast.LENGTH_SHORT).show();
+            return;
         }
 
-        new DatePickerDialog(this, dateSetListener,
-                initialCalendar.get(Calendar.YEAR),
-                initialCalendar.get(Calendar.MONTH),
-                initialCalendar.get(Calendar.DAY_OF_MONTH)).show();
-    }
-
-    // ---------------------------------
-    // 导入/导出/删除/登出逻辑 (保持不变)
-    // ---------------------------------
-
-    // 删除确认对话框 (Dialog)
-    private void showDeleteDialog(int accountId) {
         new AlertDialog.Builder(this)
-                .setTitle("删除记录")
-                .setMessage("确定要删除这条记账记录吗？")
+                .setTitle("数据导出")
+                .setMessage("确定将当前 " + accounts.size() + " 条记录导出到 accounts_backup.json 文件吗？(此操作会覆盖旧备份)")
                 .setPositiveButton("确定", (dialog, which) -> {
-                    dbHelper.deleteAccount(accountId);
-                    loadAccounts(); // 刷新列表
-                    Toast.makeText(MainActivity.this, "记录已删除", Toast.LENGTH_SHORT).show();
+                    String json = FileUtil.convertAccountsToJson(accounts);
+
+                    // 【修正 1】将 writeToFile 改回 saveToFile
+                    if (FileUtil.saveToFile(MainActivity.this, "accounts_backup.json", json)) {
+                        Toast.makeText(MainActivity.this, "数据导出成功 (" + accounts.size() + "条)", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(MainActivity.this, "数据导出失败", Toast.LENGTH_SHORT).show();
+                    }
                 })
                 .setNegativeButton("取消", null)
                 .show();
     }
 
-    // 登出确认对话框
-    private void showLogoutDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("退出登录")
-                .setMessage("确定要退出登录吗？")
-                .setPositiveButton("确定", (dialog, which) -> {
-                    PrefsManager prefsManager = new PrefsManager(this);
-                    prefsManager.logout();
-                    Intent intent = new Intent(MainActivity.this, LoginActivity.class);
-                    startActivity(intent);
-                    finish();
-                })
-                .setNegativeButton("取消", null)
-                .show();
-    }
-
-    // 数据导出 (文件存储)
-    private void exportData() {
-        List<Account> accounts = dbHelper.getFilteredAccounts(null, null, null, null, currentOrderBy);
-        String json = FileUtil.convertAccountsToJson(accounts);
-        if (FileUtil.saveToFile(this, "accounts_backup.json", json)) {
-            Toast.makeText(this, "导出成功！文件名为: accounts_backup.json", Toast.LENGTH_LONG).show();
-        } else {
-            Toast.makeText(this, "数据导出失败", Toast.LENGTH_SHORT).show();
-        }
-    }
 
     // 导入确认对话框 (Dialog)
     private void showImportDialog() {
@@ -378,17 +219,20 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        int currentAccountCount = dbHelper.getFilteredAccounts(null, null, null, null, currentOrderBy).size();
+        // 获取当前用户的所有记录的总数
+        int currentAccountCount = dbHelper.getFilteredAccounts(currentUserId, null, null, null, null, currentOrderBy).size();
 
         new AlertDialog.Builder(this)
                 .setTitle("数据导入")
                 .setMessage("导入将清空并覆盖现有 " + currentAccountCount + " 条数据，确定导入备份文件中的 " + accounts.size() + " 条数据吗？")
                 .setPositiveButton("确定", (dialog, which) -> {
-                    dbHelper.deleteAllAccounts();
+                    dbHelper.deleteAllAccounts(currentUserId); // 清空当前用户的记录
                     for (Account account : accounts) {
                         account.setId(0);
+                        account.setUserId(currentUserId); // 为导入的记录设置当前用户ID
                         dbHelper.addAccount(account);
                     }
+                    // 重置筛选器并加载新数据
                     currentTypeFilter = null;
                     currentCategoryFilter = null;
                     setFilterToLast30Days();
@@ -397,5 +241,144 @@ public class MainActivity extends AppCompatActivity {
                 })
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+
+    // --- 筛选/排序逻辑 ---
+
+    private void initFilterSpinner() {
+        Spinner sortSpinner = findViewById(R.id.spinner_sort_mode);
+        ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(this,
+                R.array.sort_modes, android.R.layout.simple_spinner_item);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        sortSpinner.setAdapter(adapter);
+
+        sortSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                String selected = parent.getItemAtPosition(position).toString();
+                if (selected.contains("最新优先")) {
+                    currentOrderBy = DBHelper.COLUMN_DATE + " DESC, " + DBHelper.COLUMN_ID + " DESC";
+                } else if (selected.contains("最早优先")) {
+                    currentOrderBy = DBHelper.COLUMN_DATE + " ASC, " + DBHelper.COLUMN_ID + " ASC";
+                } else if (selected.contains("金额最高")) {
+                    currentOrderBy = DBHelper.COLUMN_AMOUNT + " DESC";
+                } else if (selected.contains("金额最低")) {
+                    currentOrderBy = DBHelper.COLUMN_AMOUNT + " ASC";
+                }
+                loadAccounts();
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+                currentOrderBy = DBHelper.COLUMN_DATE + " DESC, " + DBHelper.COLUMN_ID + " DESC";
+                loadAccounts();
+            }
+        });
+    }
+
+    private void showFilterDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        View dialogView = getLayoutInflater().inflate(R.layout.filter_dialog, null);
+        builder.setView(dialogView);
+
+        Spinner typeSpinner = dialogView.findViewById(R.id.filter_spinner_type);
+        Spinner categorySpinner = dialogView.findViewById(R.id.filter_spinner_category);
+        EditText etStartDate = dialogView.findViewById(R.id.et_filter_start_date);
+        EditText etEndDate = dialogView.findViewById(R.id.et_filter_end_date);
+
+        // 【修正 2】将 filter_types 改回已知的资源名称
+        ArrayAdapter<CharSequence> typeAdapter = ArrayAdapter.createFromResource(this,
+                R.array.account_types_with_all, android.R.layout.simple_spinner_item);
+        typeSpinner.setAdapter(typeAdapter);
+
+        // 【修正 3】将 filter_categories 改回已知的资源名称
+        ArrayAdapter<CharSequence> categoryAdapter = ArrayAdapter.createFromResource(this,
+                R.array.expense_categories_with_all, android.R.layout.simple_spinner_item);
+        categorySpinner.setAdapter(categoryAdapter);
+
+        // 设置当前筛选值
+        if (currentTypeFilter != null) {
+            typeSpinner.setSelection(typeAdapter.getPosition(currentTypeFilter));
+        }
+        if (currentCategoryFilter != null) {
+            categorySpinner.setSelection(categoryAdapter.getPosition(currentCategoryFilter));
+        }
+        if (currentStartDate != null) {
+            etStartDate.setText(currentStartDate);
+        }
+        if (currentEndDate != null) {
+            etEndDate.setText(currentEndDate);
+        }
+
+        // 日期选择器
+        etStartDate.setOnClickListener(v -> showDatePickerDialog(etStartDate));
+        etEndDate.setOnClickListener(v -> showDatePickerDialog(etEndDate));
+
+        builder.setTitle("筛选记录")
+                .setPositiveButton("应用筛选", (dialog, which) -> {
+                    currentTypeFilter = typeSpinner.getSelectedItem().toString();
+                    currentCategoryFilter = categorySpinner.getSelectedItem().toString();
+                    currentStartDate = etStartDate.getText().toString();
+                    currentEndDate = etEndDate.getText().toString();
+
+                    if ("全部".equals(currentTypeFilter)) currentTypeFilter = null;
+                    if ("全部".equals(currentCategoryFilter)) currentCategoryFilter = null;
+                    if (currentStartDate.isEmpty() || currentEndDate.isEmpty()) {
+                        currentStartDate = null;
+                        currentEndDate = null;
+                    }
+
+                    loadAccounts();
+                })
+                .setNegativeButton("取消", null)
+                .setNeutralButton("清除筛选", (dialog, which) -> {
+                    currentTypeFilter = null;
+                    currentCategoryFilter = null;
+                    currentStartDate = null;
+                    currentEndDate = null;
+                    // 默认筛选最近 30 天
+                    setFilterToLast30Days();
+                    loadAccounts();
+                })
+                .show();
+    }
+
+    private void showDatePickerDialog(EditText dateEditText) {
+        Calendar calendar = Calendar.getInstance();
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+
+        // 尝试解析 EditText 中的当前日期
+        String currentText = dateEditText.getText().toString();
+        if (!currentText.isEmpty()) {
+            try {
+                Date date = sdf.parse(currentText);
+                if (date != null) {
+                    calendar.setTime(date);
+                }
+            } catch (Exception e) {
+                // 解析失败，使用当前日期
+            }
+        }
+
+        new DatePickerDialog(this, (view, year, month, dayOfMonth) -> {
+            Calendar selectedDate = Calendar.getInstance();
+            selectedDate.set(year, month, dayOfMonth);
+            String dateString = sdf.format(selectedDate.getTime());
+            dateEditText.setText(dateString);
+        }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show();
+    }
+
+    // 设置默认筛选范围为最近 30 天
+    private void setFilterToLast30Days() {
+        Calendar calendar = Calendar.getInstance();
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+
+        // 设置结束日期为今天
+        currentEndDate = sdf.format(calendar.getTime());
+
+        // 设置开始日期为 30 天前
+        calendar.add(Calendar.DAY_OF_YEAR, -29);
+        currentStartDate = sdf.format(calendar.getTime());
     }
 }
