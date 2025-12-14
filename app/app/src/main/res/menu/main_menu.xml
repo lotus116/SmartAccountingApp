@@ -1,0 +1,29 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_filter"
+        android:title="筛选"
+        android:icon="@drawable/ic_filter"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/action_chart"
+        android:title="图表分析"
+        app:showAsAction="never"/>
+
+    <item
+        android:id="@+id/action_export"
+        android:title="一键导出"
+        app:showAsAction="never"/>
+
+    <item
+        android:id="@+id/action_import"
+        android:title="一键导入"
+        app:showAsAction="never"/>
+
+    <item
+        android:id="@+id/action_logout"
+        android:title="退出登录"
+        app:showAsAction="never"/>
+</menu>

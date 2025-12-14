@@ -1,0 +1,6 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Base.Theme.SmartAccountingApp" parent="Theme.AppCompat.Light">
+    </style>
+
+    <style name="Theme.SmartAccountingApp" parent="Base.Theme.SmartAccountingApp" />
+</resources>

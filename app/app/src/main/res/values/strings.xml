@@ -1,0 +1,49 @@
+<resources>
+    <string name="app_name">智能记账本</string>
+
+    <string-array name="account_types">
+        <item>支出</item>
+        <item>收入</item>
+    </string-array>
+
+    <string-array name="expense_categories">
+        <item>餐饮</item>
+        <item>购物</item>
+        <item>交通</item>
+        <item>学习</item>
+        <item>娱乐</item>
+        <item>其他</item>
+    </string-array>
+
+    <string-array name="time_presets">
+        <item>当前月份</item>
+        <item>过去 30 天</item>
+        <item>本年</item>
+        <item>所有时间</item>
+    </string-array>
+
+    <string-array name="account_types_with_all">
+        <item>全部</item>
+        <item>支出</item>
+        <item>收入</item>
+    </string-array>
+
+    <string-array name="expense_categories_with_all">
+        <item>全部</item>
+        <item>餐饮</item>
+        <item>交通</item>
+        <item>购物</item>
+        <item>学习</item>
+        <item>娱乐</item>
+        <item>其他</item>
+    </string-array>
+
+    <string name="hint_username">请输入用户名 (EditText)</string>
+    <string name="hint_password">请输入密码 (EditText)</string>
+    <string name="login">登录 (Button)</string>
+    <string name="register_text">还没有账号？点此注册</string>
+    <string name="register_btn">注册 (Button)</string>
+    <string name="hint_amount">金额 (EditText)</string>
+    <string name="hint_note">备注 (EditText)</string>
+    <string name="save">保存 (Button)</string>
+</resources>

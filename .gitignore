@@ -1,0 +1,35 @@
+# =============== Android Studio and Gradle files ===============
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/workspace.xml
+/.idea/tasks.xml
+/.idea/gradle.xml
+/.idea/assetNames.xml
+/.idea/compiler.xml
+/.idea/deploymentTargetDropDown.xml
+/.idea/jarRepositories.xml
+/.idea/migrations.xml
+/.idea/modules.xml
+/.idea/vcs.xml
+.DS_Store
+
+# Built files
+/build
+/captures
+/gradle/wrapper/gradle-wrapper.jar
+/app/build
+/app/*.apk
+/app/*.aar
+
+# External libraries
+/libs
+
+# Keystore files (IMPORTANT: Do NOT commit your keystore/signature files)
+*.jks
+*.keystore
+
+# Android Studio 4.1+
+.idea/codeStyles/
+.idea/navEditor.xml
