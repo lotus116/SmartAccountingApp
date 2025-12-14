@@ -177,6 +177,14 @@ public class MainActivity extends AppCompatActivity {
         return super.onOptionsItemSelected(item);
     }
 
+    /**
+     * 【新增】根据当前用户ID生成专属备份文件名
+     */
+    private String getBackupFileName() {
+        // 文件名格式：accounts_backup_[user_id].json
+        return "accounts_backup_" + currentUserId + ".json";
+    }
+
     // 导出确认对话框
     private void showExportDialog() {
         // 获取当前用户的所有记录
@@ -187,14 +195,17 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        String fileName = getBackupFileName(); // 使用用户专属文件名
+
         new AlertDialog.Builder(this)
                 .setTitle("数据导出")
-                .setMessage("确定将当前 " + accounts.size() + " 条记录导出到 accounts_backup.json 文件吗？(此操作会覆盖旧备份)")
+                // 【修正 1】更新提示信息，显示用户专属文件名
+                .setMessage("确定将当前 " + accounts.size() + " 条记录导出到 " + fileName + " 文件吗？(此操作会覆盖旧备份)")
                 .setPositiveButton("确定", (dialog, which) -> {
                     String json = FileUtil.convertAccountsToJson(accounts);
 
-                    // 【修正 1】将 writeToFile 改回 saveToFile
-                    if (FileUtil.saveToFile(MainActivity.this, "accounts_backup.json", json)) {
+                    // 【修正 2】使用用户专属文件名进行保存
+                    if (FileUtil.saveToFile(MainActivity.this, fileName, json)) {
                         Toast.makeText(MainActivity.this, "数据导出成功 (" + accounts.size() + "条)", Toast.LENGTH_SHORT).show();
                     } else {
                         Toast.makeText(MainActivity.this, "数据导出失败", Toast.LENGTH_SHORT).show();
@@ -207,9 +218,13 @@ public class MainActivity extends AppCompatActivity {
 
     // 导入确认对话框 (Dialog)
     private void showImportDialog() {
-        String json = FileUtil.readFromFile(this, "accounts_backup.json");
+        String fileName = getBackupFileName(); // 使用用户专属文件名
+
+        // 【修正 3】读取用户专属备份文件
+        String json = FileUtil.readFromFile(this, fileName);
         if (json == null) {
-            Toast.makeText(this, "找不到accounts_backup.json备份文件", Toast.LENGTH_SHORT).show();
+            // 更新提示信息，明确告诉用户找不到谁的备份文件
+            Toast.makeText(this, "找不到当前用户 (" + currentUserId + ") 的备份文件: " + fileName, Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -229,7 +244,7 @@ public class MainActivity extends AppCompatActivity {
                     dbHelper.deleteAllAccounts(currentUserId); // 清空当前用户的记录
                     for (Account account : accounts) {
                         account.setId(0);
-                        account.setUserId(currentUserId); // 为导入的记录设置当前用户ID
+                        account.setUserId(currentUserId); // 这一步是关键，确保导入的记录属于当前用户
                         dbHelper.addAccount(account);
                     }
                     // 重置筛选器并加载新数据
@@ -244,7 +259,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
-    // --- 筛选/排序逻辑 ---
+    // --- 筛选/排序逻辑 (与之前保持一致) ---
 
     private void initFilterSpinner() {
         Spinner sortSpinner = findViewById(R.id.spinner_sort_mode);
@@ -287,12 +302,10 @@ public class MainActivity extends AppCompatActivity {
         EditText etStartDate = dialogView.findViewById(R.id.et_filter_start_date);
         EditText etEndDate = dialogView.findViewById(R.id.et_filter_end_date);
 
-        // 【修正 2】将 filter_types 改回已知的资源名称
         ArrayAdapter<CharSequence> typeAdapter = ArrayAdapter.createFromResource(this,
                 R.array.account_types_with_all, android.R.layout.simple_spinner_item);
         typeSpinner.setAdapter(typeAdapter);
 
-        // 【修正 3】将 filter_categories 改回已知的资源名称
         ArrayAdapter<CharSequence> categoryAdapter = ArrayAdapter.createFromResource(this,
                 R.array.expense_categories_with_all, android.R.layout.simple_spinner_item);
         categorySpinner.setAdapter(categoryAdapter);
