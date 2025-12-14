@@ -20,7 +20,8 @@
         <item>最近 7 天</item>
         <item>最近 30 天</item>
         <item>本年</item>
-        <item>自定义</item>  </string-array>
+        <item>自定义</item>
+    </string-array>
 
     <string-array name="account_types_with_all">
         <item>全部</item>
