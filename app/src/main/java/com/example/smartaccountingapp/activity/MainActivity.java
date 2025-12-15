@@ -164,6 +164,10 @@ public class MainActivity extends AppCompatActivity {
             intent.putExtra("user_id", currentUserId);
             startActivity(intent);
             return true;
+        } else if (id == R.id.action_settings) { // 【新增处理】
+            startActivity(new Intent(this, SettingsActivity.class));
+            return true;
+
         } else if (id == R.id.action_logout) {
             // 执行退出登录
             PrefsManager.logout(this);

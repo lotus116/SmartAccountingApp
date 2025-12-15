@@ -25,6 +25,7 @@
         <activity android:name=".activity.MainActivity" />
         <activity android:name=".activity.AddAccountActivity" />
         <activity android:name=".activity.ChartActivity" />
+        <activity android:name=".activity.SettingsActivity" />
 
     </application>
 </manifest>
