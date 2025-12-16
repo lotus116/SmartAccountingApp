@@ -80,7 +80,7 @@ public class SettingsActivity extends AppCompatActivity {
                 break;
 
             case 4: // 版本信息
-                message = "版本号: v1.0.0 (稳定版)\n\n发布日期: 2025年12月15日";
+                message = "版本号: v3.0.0 (稳定版)\n\n发布日期: 2025年12月16日";
                 showCustomDialog(title, message);
                 break;
 
