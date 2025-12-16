@@ -4,19 +4,20 @@ import java.io.Serializable;
 
 public class Account implements Serializable {
     private int id;
-    private String userId; // 【新增】用户ID，用于区分不同用户的记录
+    private String userId;
     private String type; // 收入/支出
     private String category;
     private double amount;
     private String date; // YYYY-MM-DD
     private String note;
+    private String imagePath; // 【新增】图片本地路径
 
     public Account() {
         // 无参构造函数 (Gson 反序列化需要)
     }
 
-    // 【修改】构造函数新增 userId 参数
-    public Account(int id, String userId, String type, String category, double amount, String date, String note) {
+    // 【修改】构造函数新增 imagePath 参数
+    public Account(int id, String userId, String type, String category, double amount, String date, String note, String imagePath) {
         this.id = id;
         this.userId = userId;
         this.type = type;
@@ -24,6 +25,7 @@ public class Account implements Serializable {
         this.amount = amount;
         this.date = date;
         this.note = note;
+        this.imagePath = imagePath;
     }
 
     // --- Getter and Setter Methods ---
@@ -31,7 +33,6 @@ public class Account implements Serializable {
     public int getId() { return id; }
     public void setId(int id) { this.id = id; }
 
-    // 【新增】
     public String getUserId() { return userId; }
     public void setUserId(String userId) { this.userId = userId; }
 
@@ -49,4 +50,8 @@ public class Account implements Serializable {
 
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }
+
+    // 【新增】
+    public String getImagePath() { return imagePath; }
+    public void setImagePath(String imagePath) { this.imagePath = imagePath; }
 }
